@@ -1,0 +1,53 @@
+{
+  "name": "dsh-wechat-135",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "DSH 插件：在 135 编辑器里完成公众号推文排版 —— 模板解剖/清空、内容合成、图片上传、保存与预览二维码。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "wechat",
+    "wechat-official-account",
+    "135editor",
+    "typesetting",
+    "automation",
+    "cdp"
+  ],
+  "license": "MIT",
+  "author": "dsh-wechat-135 contributors",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": ">=0.1.0-rc.7"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node test/syntax.mjs",
+    "smoke": "node test/smoke.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SuShuoran/dsh-wechat-135.git"
+  },
+  "homepage": "https://github.com/SuShuoran/dsh-wechat-135#readme",
+  "bugs": {
+    "url": "https://github.com/SuShuoran/dsh-wechat-135/issues"
+  }
+}

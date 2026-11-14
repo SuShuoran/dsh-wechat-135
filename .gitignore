@@ -1,0 +1,16 @@
+# 依赖
+node_modules/
+pnpm-lock.yaml
+
+# 运行时产物（截图/备份/二维码/浏览器 profile 默认在 ~/.dsh/wechat-135，不在仓库里）
+out/
+backups/
+browser/
+*.log
+
+# 系统 / 编辑器
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.tmp
