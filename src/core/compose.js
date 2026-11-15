@@ -207,17 +207,10 @@ const FILL_BODY = String.raw`
       if (x && typeof x === 'object' && x.url && x.w && x.h) givenMeta[x.url] = { w: x.w, h: x.h };
     }
   }
+  // 图片宽高：优先用 plan 里给的（本地图片上传时已带 w/h），没给的就按方图处理。
+  // **不要在同一段 evaluate 里 await 图片加载**：沙箱可能是后台标签页，定时器被节流，
+  // 图片请求再一卡，整个 evaluate 会挂到超时。排版不依赖浏览器加载，交给调用方给尺寸。
   const imgMeta = { ...givenMeta };
-  await Promise.all((plan.allImages || []).map((url) => new Promise((resolve) => {
-    if (imgMeta[url]) return resolve();
-    const im = new Image();
-    let settled = false;
-    const done = () => { if (settled) return; settled = true; clearTimeout(timer); resolve(); };
-    const timer = setTimeout(() => { imgMeta[url] = imgMeta[url] || { w: 0, h: 0 }; done(); }, 6000);
-    im.onload = () => { imgMeta[url] = { w: im.naturalWidth, h: im.naturalHeight }; done(); };
-    im.onerror = () => { imgMeta[url] = { w: 0, h: 0 }; done(); };
-    im.src = url;
-  })));
   const imgTag = (url, widthStyle) => '<img src="' + esc(url) + '" style="display:block;width:' + widthStyle + ';border-radius:6px;margin:0 auto;" />';
   /** 单张图。 */
   const onePhoto = (url, width) => '<section style="margin:12px 0;text-align:center;">' + imgTag(url, width) + '</section>';

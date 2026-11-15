@@ -1,4 +1,4 @@
-﻿/**
+/**
  * upload.js — 把本地图片传到 135 图床。
  *
  * 为什么在页面里 fetch：图床接口要 135 的登录态 cookie，宿主进程直接 fetch 拿不到；
@@ -42,8 +42,20 @@ export async function uploadImage(conn, filePath) {
     fd.append('appkey', 'undefined');
     fd.append('returnType', 'postmsg');
     fd.append('upload', file);
-    const res = await fetch(${JSON.stringify(ENDPOINT)}, { method: 'POST', body: fd, credentials: 'include' });
-    const text = await res.text();
+    let res;
+    let text;
+    try {
+      // 必须带超时：135 站点不可达时 fetch 会一直挂着，把整条工具调用拖死
+      res = await fetch(${JSON.stringify(ENDPOINT)}, {
+        method: 'POST', body: fd, credentials: 'include', signal: AbortSignal.timeout(45000),
+      });
+      text = await res.text();
+    } catch (e) {
+      return JSON.stringify({
+        ok: false,
+        error: '上传请求失败（135 站点不可达或超时，请检查网络/代理后重试）: ' + String((e && e.message) || e).slice(0, 120),
+      });
+    }
     const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
     // 135 的 returnType=postmsg 会返回 <script>window.parent.parent.postMessage('{json}','*');</script>
     let data = safeJson(text);
@@ -56,7 +68,7 @@ export async function uploadImage(conn, filePath) {
     const id = data && (data.id || '') || '';
     return JSON.stringify({ ok: !!url, status: res.status, state, url, id, body: text.slice(0, 400) });
   })()`;
-  const r = await evaluateJson(conn, expr, { timeoutMs: 120000 });
+  const r = await evaluateJson(conn, expr, { timeoutMs: 90000 });
   return { file: filePath, bytes: stat.size, ...r };
 }
 
