@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * wx135.mjs — 本地开发/自测 CLI，**不需要把插件装进 DSH** 就能验证核心链路。
  *
@@ -408,8 +408,7 @@ async function main() {
           const up = await uploadImage(editorConn, p);
           uploads.push({ file: p, ok: up.ok, url: up.url, state: up.state, error: up.error });
           if (!up.ok) throw new Error(`上传失败：${p}（${up.state || up.body || 'unknown'}）`);
-          const caption = (item && typeof item === 'object' && item.caption) ? item.caption : undefined;
-              next.push({ url: up.url, w: size?.width || 0, h: size?.height || 0, ...(caption ? { caption } : {}) });
+          next.push({ url: up.url, w: size?.width || 0, h: size?.height || 0 });
         }
         sec.images = next;
       }

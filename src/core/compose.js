@@ -13,8 +13,8 @@
  *                   label: "PART.01",               // 可选：模板有"编号"槽位时填进去
  *                   paragraphs: ["…"],
  *                   items: ["条目 1", "条目 2"],     // 可选：编号列表（通知/须知类）
- *                   subsections: [{ heading: "离校前", items: ["…"] }],  // 可选：二级小标题 + 条目
- *                   images: ["url" | { url, caption }]  // caption = 图注
+ *                   subsections: [{ heading: "离校前", items: ["…"] }],  // 可选：二级标题（复用模板标题样式）+ 条目
+ *                   images: ["url" | { url }]
  *                 }],
  *                 closing: "结尾段（可空）",
  *                 credits: { 文字来源, 图片来源 } | null,
@@ -25,9 +25,10 @@
  *
  * 输出：合成后的整篇 HTML + 统计 + 调试信息。**不写编辑器**——写回走 wx135_write。
  *
- * 排版规则（v0.2）：
+ * 排版规则（v0.3.1）：
  *   - 正文 14px / 行距 1.75 / 字距 2px / 首行缩进 2em
- *   - 图片：宽高比 ≥1.5（全景/合照）全宽大图；其余两两一行；落单的最后一张 92% 宽
+ *   - 图片：宽高比 ≥1.5（全景/合照）全宽大图；3 张竖图一行三张；其余两两一行；落单 92%
+ *   - 二级标题：复用模板自带的分节标题样式（同字体/颜色/字重，字号约 0.78 倍，无缩进）
  *   - 模板分节不够时克隆最后一节整段；多了整段删除
  *   - 标题/小标题槽位可能在同一块里有多个（模板重复文本），整块一起填
  */
@@ -218,14 +219,11 @@ const FILL_BODY = String.raw`
     im.src = url;
   })));
   const imgTag = (url, widthStyle) => '<img src="' + esc(url) + '" style="display:block;width:' + widthStyle + ';border-radius:6px;margin:0 auto;" />';
-  const captionTag = (text) => (text
-    ? '<p style="text-align:center;font-size:12.5px;color:#8a8a8a;letter-spacing:1px;line-height:1.6;margin:4px 0 0;">' + esc(text) + '</p>'
-    : '');
-  /** 单张图（可带图注）。 */
-  const onePhoto = (item, width) => '<section style="margin:12px 0;text-align:center;">' + imgTag(item.url, width) + captionTag(item.caption) + '</section>';
-  /** 一行并排多图（每格可带图注）。 */
-  const photoRowHtml = (items, gap = 8) => {
-    const cells = items.map((item) => '<section style="flex:1 1 0;min-width:0;">' + imgTag(item.url, '100%') + captionTag(item.caption) + '</section>').join('');
+  /** 单张图。 */
+  const onePhoto = (url, width) => '<section style="margin:12px 0;text-align:center;">' + imgTag(url, width) + '</section>';
+  /** 一行并排多图。 */
+  const photoRowHtml = (urls, gap = 8) => {
+    const cells = urls.map((url) => '<section style="flex:1 1 0;min-width:0;">' + imgTag(url, '100%') + '</section>').join('');
     return '<section style="display:flex;gap:' + gap + 'px;align-items:flex-start;margin:12px 0;">' + cells + '</section>';
   };
   /**
@@ -233,22 +231,21 @@ const FILL_BODY = String.raw`
    *  - 宽高比 ≥1.5（合影/全景/横版照片）→ 单张全宽大图
    *  - 3 张竖图/方图 → 一行三张（小图并排）
    *  - 其余两两一行；落单的最后一张 92% 宽
-   *  - 有 caption 就跟在图下面（图注：谁在做什么/什么场景）
-   * @param {Array<{url:string, caption?:string}>} items
+   * @param {string[]} urls
    */
-  const buildPhotoHtml = (items) => {
-    if (!items || !items.length) return '';
+  const buildPhotoHtml = (urls) => {
+    if (!urls || !urls.length) return '';
     const wide = [];
     const rest = [];
-    for (const item of items) {
-      const m = imgMeta[item.url] || { w: 0, h: 0 };
+    for (const url of urls) {
+      const m = imgMeta[url] || { w: 0, h: 0 };
       const ratio = m.w && m.h ? m.w / m.h : 1;
-      if (ratio >= 1.5) wide.push(item); else rest.push(item);
+      if (ratio >= 1.5) wide.push(url); else rest.push(url);
     }
     const parts = [];
-    for (const item of wide) parts.push(onePhoto(item, '100%'));
-    const allPortraitish = rest.length && rest.every((item) => {
-      const m = imgMeta[item.url] || { w: 0, h: 0 };
+    for (const url of wide) parts.push(onePhoto(url, '100%'));
+    const allPortraitish = rest.length && rest.every((url) => {
+      const m = imgMeta[url] || { w: 0, h: 0 };
       return m.w && m.h ? m.w / m.h < 1.15 : true;
     });
     if (rest.length === 3 && allPortraitish) {
@@ -312,7 +309,13 @@ const FILL_BODY = String.raw`
     if (/^(\d+[.、)）]|（\d+）|[一二三四五六七八九十]+[、.]|[-•·])/.test(raw)) return raw;
     return (index + 1) + '. ' + raw;
   };
-  const createParagraphsAfter = (anchorEl, texts, style = 'para') => {
+  /**
+   * 在 anchorEl 后插入若干段落。applyStyle(clone, holder) 决定每段怎么套样式：
+   *  - 正文：沿用模板段落样式（14px/1.75/2px/首行缩进）
+   *  - 条目：编号左对齐、无缩进
+   *  - 二级标题：**复用模板自带的分节标题样式**（同字体/颜色/字重，字号约 0.78 倍，无缩进）
+   */
+  const createParagraphsAfter = (anchorEl, texts, applyStyle = null) => {
     const proto = protoParagraph();
     if (!proto || !anchorEl) return [];
     const made = [];
@@ -323,16 +326,23 @@ const FILL_BODY = String.raw`
       clone.querySelectorAll('[data-wx135-slot]').forEach((e) => e.removeAttribute('data-wx135-slot'));
       const holder = [...clone.querySelectorAll('p,span,strong')].find((h) => (h.textContent || '').trim()) || clone;
       holder.textContent = text;
-      if (style === 'list') stylePlain(holder);
-      else if (style === 'subhead') stylePlain(holder, { bold: true });
-      else { styleParagraph(holder); styleParagraph(clone); }
-      if (style !== 'para') stylePlain(clone, { bold: style === 'subhead' });
+      if (typeof applyStyle === 'function') {
+        applyStyle(clone, holder);
+      } else {
+        styleParagraph(holder);
+        styleParagraph(clone);
+      }
       cursor.parentNode.insertBefore(clone, cursor.nextSibling);
       cursor = clone;
       made.push(clone);
       stats.paragraphsAdded += 1;
     }
     return made;
+  };
+  /** 条目样式（编号列表）。 */
+  const applyListItem = (clone, holder) => {
+    stylePlain(holder);
+    stylePlain(clone);
   };
 
   for (let i = 0; i < ranges.length; i += 1) {
@@ -341,6 +351,32 @@ const FILL_BODY = String.raw`
     const slotInfo = sectionSlots[i] || { heading: [], text: [] };
     forcedColor = (sec && sec.textColor) || plan.textColor || null;
     if (!sec) continue;
+    // 先记录模板分节标题的样式（二级标题要"复用模板自带样式"就从这里派生）
+    const headingEl = slotInfo.heading[0] ? slotInfo.heading[0].el : null;
+    let headingStyle = null;
+    if (headingEl) {
+      const cs = getComputedStyle(headingEl);
+      headingStyle = {
+        fontSize: parseFloat(cs.fontSize) || 18,
+        color: cs.color,
+        fontWeight: cs.fontWeight,
+        letterSpacing: cs.letterSpacing,
+        textAlign: cs.textAlign,
+      };
+    }
+    const applySubhead = (clone, holder) => {
+      const size = headingStyle ? Math.max(14, Math.round(headingStyle.fontSize * 0.78)) : 15;
+      for (const target of [holder, clone]) {
+        target.style.fontSize = size + 'px';
+        target.style.lineHeight = '1.75';
+        target.style.letterSpacing = headingStyle && headingStyle.letterSpacing !== 'normal' ? headingStyle.letterSpacing : '2px';
+        target.style.color = forcedColor || (headingStyle ? headingStyle.color : textColor(target));
+        target.style.fontWeight = headingStyle ? headingStyle.fontWeight : '600';
+        target.style.textIndent = '0';
+        target.style.textAlign = headingStyle ? headingStyle.textAlign : 'left';
+        target.style.margin = '10px 0 4px';
+      }
+    };
     // 标题：模板可能把"编号 + 标题"拆成两个槽位（PART.01 / 启动仪式），也可能只是重复文本
     slotInfo.heading.forEach((slot, k) => {
       if (k === 0) setText(slot, sec.heading || '');
@@ -374,40 +410,40 @@ const FILL_BODY = String.raw`
     }
     // 条目（通知/须知类文章大量用：1. 2. 3.）
     if (Array.isArray(sec.items) && sec.items.length && cursor) {
-      const made = createParagraphsAfter(cursor, sec.items.map(numberItem), 'list');
+      const made = createParagraphsAfter(cursor, sec.items.map(numberItem), applyListItem);
       if (made.length) cursor = made[made.length - 1];
     }
-    // 子小节（"离校前 / 行前准备 / 途中守则" 这种）：小标题加粗 + 下面跟条目
+    // 子小节（"离校前 / 行前准备 / 途中守则" 这种）：复用模板自带的分节标题样式（缩小一号），下面跟条目
     for (const sub of sec.subsections || []) {
       if (!sub || !cursor) continue;
       if (sub.heading) {
-        const made = createParagraphsAfter(cursor, [sub.heading], 'subhead');
+        const made = createParagraphsAfter(cursor, [sub.heading], applySubhead);
         if (made.length) cursor = made[made.length - 1];
       }
       if (Array.isArray(sub.items) && sub.items.length) {
-        const made = createParagraphsAfter(cursor, sub.items.map(numberItem), 'list');
+        const made = createParagraphsAfter(cursor, sub.items.map(numberItem), applyListItem);
         if (made.length) cursor = made[made.length - 1];
       }
     }
-    // 图片：本节范围内的锚点优先；图片可带图注 caption
-    const imgItems = (sec.images || [])
-      .map((x) => (typeof x === 'string' ? { url: x } : { url: x && x.url, caption: x && x.caption }))
-      .filter((x) => x.url);
-    if (imgItems.length) {
+    // 图片：本节范围内的锚点优先
+    const imgUrls = (sec.images || [])
+      .map((x) => (typeof x === 'string' ? x : (x && x.url) || ''))
+      .filter(Boolean);
+    if (imgUrls.length) {
       const anchors = [...root.querySelectorAll('[data-wx135-photo]')].filter((a) => {
         const b = blockIndexOf(a, getBlocks());
         return b >= range.start && b <= range.end;
       });
       if (anchors.length) {
-        anchors[0].insertAdjacentHTML('afterend', buildPhotoHtml(imgItems));
+        anchors[0].insertAdjacentHTML('afterend', buildPhotoHtml(imgUrls));
         anchors.forEach((a) => a.remove());
         stats.anchorsUsed += 1;
       } else if (cursor) {
-        cursor.insertAdjacentHTML('afterend', buildPhotoHtml(imgItems));
+        cursor.insertAdjacentHTML('afterend', buildPhotoHtml(imgUrls));
       } else {
-        blocks[range.start].insertAdjacentHTML('afterend', buildPhotoHtml(imgItems));
+        blocks[range.start].insertAdjacentHTML('afterend', buildPhotoHtml(imgUrls));
       }
-      stats.imagesPlaced += imgItems.length;
+      stats.imagesPlaced += imgUrls.length;
     }
   }
 
