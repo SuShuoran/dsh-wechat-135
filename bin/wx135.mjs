@@ -408,7 +408,8 @@ async function main() {
           const up = await uploadImage(editorConn, p);
           uploads.push({ file: p, ok: up.ok, url: up.url, state: up.state, error: up.error });
           if (!up.ok) throw new Error(`上传失败：${p}（${up.state || up.body || 'unknown'}）`);
-          next.push({ url: up.url, w: size?.width || 0, h: size?.height || 0 });
+          const caption = (item && typeof item === 'object' && item.caption) ? item.caption : undefined;
+              next.push({ url: up.url, w: size?.width || 0, h: size?.height || 0, ...(caption ? { caption } : {}) });
         }
         sec.images = next;
       }

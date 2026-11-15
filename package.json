@@ -1,6 +1,6 @@
 {
   "name": "dsh-wechat-135",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "DSH 插件：在 135 编辑器里完成公众号推文排版 —— 模板解剖/清空、内容合成、图片上传、保存与预览二维码。",

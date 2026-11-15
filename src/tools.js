@@ -671,10 +671,12 @@ export function createTools(defineTool) {
       name: 'wx135_compose',
       description:
         '排版合成（工作流核心）：把 wx135_template clean 产出的框架 HTML + 内容方案 plan.json 合成为整篇推文。'
-        + '会自动上传 plan 里的本地图片到 135 图床、填标题/导语/分节标题/正文、按规则排图片（全景/合照全宽、'
-        + '其余两两一行）、加文字/图片来源、拼固定尾部。**不写编辑器**——产物 article.html 再用 wx135_write 写回。'
-        + 'plan.json 字段：title[]、subtitle、lead[]、sections[{heading,paragraphs[],images[]}]、'
-        + 'closing、credits{文字来源,图片来源}、networkEditors、footerStyle。',
+        + '会自动上传 plan 里的本地图片到 135 图床、填标题/导语/分节标题/正文/条目、按规则排图片'
+        + '（全景合照全宽、3 竖图一行三张、其余两两一行，可带图注）、加文字/图片来源、拼固定尾部。'
+        + '**不写编辑器**——产物 article.html 再用 wx135_write 写回。'
+        + 'plan.json 字段：title[]、subtitle、lead[]、sections[{heading,label,paragraphs[],items[],'
+        + 'subsections[{heading,items[]}],images[url|{url,caption}],textColor}]、closing、'
+        + 'credits{文字来源,图片来源}、networkEditors、footerStyle。',
       parameters: {
         frame: { type: 'string', required: true, description: '框架 HTML 路径（clean 的 frame.html）。' },
         plan: { type: 'string', required: true, description: '内容方案 plan.json 路径。' },
@@ -719,7 +721,8 @@ export function createTools(defineTool) {
               const up = await uploadImage(editorConn, raw);
               uploads.push({ file: raw, ok: up.ok, url: up.url, state: up.state, error: up.error });
               if (!up.ok) throw new Error(`上传失败：${raw}（${up.state || up.body || 'unknown'}）`);
-              next.push({ url: up.url, w: size?.width || 0, h: size?.height || 0 });
+              const caption = (item && typeof item === 'object' && item.caption) ? item.caption : undefined;
+              next.push({ url: up.url, w: size?.width || 0, h: size?.height || 0, ...(caption ? { caption } : {}) });
             }
             sec.images = next;
           }

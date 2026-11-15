@@ -8,7 +8,14 @@
  *                 title: ["大标题第一行", "第二行"],
  *                 subtitle: "——副标题（可空）",
  *                 lead: ["导语段落", ...],
- *                 sections: [{ heading, paragraphs:[...], images:[url | {url,w,h}] }, ...],
+ *                 sections: [{
+ *                   heading: "启动仪式",            // 分节标题
+ *                   label: "PART.01",               // 可选：模板有"编号"槽位时填进去
+ *                   paragraphs: ["…"],
+ *                   items: ["条目 1", "条目 2"],     // 可选：编号列表（通知/须知类）
+ *                   subsections: [{ heading: "离校前", items: ["…"] }],  // 可选：二级小标题 + 条目
+ *                   images: ["url" | { url, caption }]  // caption = 图注
+ *                 }],
  *                 closing: "结尾段（可空）",
  *                 credits: { 文字来源, 图片来源 } | null,
  *                 networkEditors: "网络编辑名单",
@@ -44,6 +51,8 @@ const FILL_BODY = String.raw`
   }
 
   const stats = { addedSections: 0, removedSections: 0, paragraphsAdded: 0, imagesPlaced: 0, anchorsUsed: 0 };
+  /** 正文颜色：默认按背景自动选黑/白；plan.textColor 或 section.textColor 可强制指定（模板用绝对定位背景层时自动判断会失效）。 */
+  let forcedColor = plan.textColor || null;
   const esc = (s) => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -140,22 +149,40 @@ const FILL_BODY = String.raw`
 
   // 5) 文字工具
   const setText = (slot, text) => { if (slot && slot.el) slot.el.textContent = text == null ? '' : String(text); };
-  const styleParagraph = (el) => {
-    if (!el) return;
+  /**
+   * 正文字色：默认 #333；但如果所在容器是深色底（比如模板的深蓝卡片），
+   * 再写黑字就看不见了 —— 往上找第一个有背景色的祖先，按亮度决定用白字。
+   */
+  const textColor = (el) => {
+    let n = el;
+    let depth = 0;
+    while (n && n !== document.body && depth < 25) {
+      const bg = getComputedStyle(n).backgroundColor || '';
+      const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/.exec(bg);
+      if (m && (m[4] === undefined || Number(m[4]) > 0.5)) {
+        const lum = (0.299 * Number(m[1]) + 0.587 * Number(m[2]) + 0.114 * Number(m[3])) / 255;
+        if (lum < 0.55) return '#ffffff';
+        return '#333333';
+      }
+      n = n.parentElement;
+      depth += 1;
+    }
+    return '#333333';
+  };
+  const applyParaStyle = (el, color) => {
     el.style.fontSize = '14px';
     el.style.lineHeight = '1.75';
     el.style.letterSpacing = '2px';
     el.style.textIndent = '2em';
-    el.style.color = '#333333';
+    el.style.color = color;
     el.style.textAlign = 'justify';
+  };
+  const styleParagraph = (el) => {
+    if (!el) return;
+    const color = forcedColor || textColor(el);
+    applyParaStyle(el, color);
     const p = el.tagName === 'P' ? el : el.closest('p');
-    if (p && p !== el) {
-      p.style.fontSize = '14px';
-      p.style.lineHeight = '1.75';
-      p.style.letterSpacing = '2px';
-      p.style.textIndent = '2em';
-      p.style.textAlign = 'justify';
-    }
+    if (p && p !== el) applyParaStyle(p, color);
   };
   const insertParagraphAfter = (anchorEl, text) => {
     if (!anchorEl) return null;
@@ -191,24 +218,46 @@ const FILL_BODY = String.raw`
     im.src = url;
   })));
   const imgTag = (url, widthStyle) => '<img src="' + esc(url) + '" style="display:block;width:' + widthStyle + ';border-radius:6px;margin:0 auto;" />';
-  const buildPhotoHtml = (urls) => {
-    if (!urls || !urls.length) return '';
+  const captionTag = (text) => (text
+    ? '<p style="text-align:center;font-size:12.5px;color:#8a8a8a;letter-spacing:1px;line-height:1.6;margin:4px 0 0;">' + esc(text) + '</p>'
+    : '');
+  /** 单张图（可带图注）。 */
+  const onePhoto = (item, width) => '<section style="margin:12px 0;text-align:center;">' + imgTag(item.url, width) + captionTag(item.caption) + '</section>';
+  /** 一行并排多图（每格可带图注）。 */
+  const photoRowHtml = (items, gap = 8) => {
+    const cells = items.map((item) => '<section style="flex:1 1 0;min-width:0;">' + imgTag(item.url, '100%') + captionTag(item.caption) + '</section>').join('');
+    return '<section style="display:flex;gap:' + gap + 'px;align-items:flex-start;margin:12px 0;">' + cells + '</section>';
+  };
+  /**
+   * 图片排版规则（来自范文 4–6 的观察）：
+   *  - 宽高比 ≥1.5（合影/全景/横版照片）→ 单张全宽大图
+   *  - 3 张竖图/方图 → 一行三张（小图并排）
+   *  - 其余两两一行；落单的最后一张 92% 宽
+   *  - 有 caption 就跟在图下面（图注：谁在做什么/什么场景）
+   * @param {Array<{url:string, caption?:string}>} items
+   */
+  const buildPhotoHtml = (items) => {
+    if (!items || !items.length) return '';
     const wide = [];
     const rest = [];
-    for (const u of urls) {
-      const m = imgMeta[u] || { w: 0, h: 0 };
+    for (const item of items) {
+      const m = imgMeta[item.url] || { w: 0, h: 0 };
       const ratio = m.w && m.h ? m.w / m.h : 1;
-      if (ratio >= 1.5) wide.push(u); else rest.push(u);
+      if (ratio >= 1.5) wide.push(item); else rest.push(item);
     }
     const parts = [];
-    for (const u of wide) parts.push('<section style="margin:12px 0;text-align:center;">' + imgTag(u, '100%') + '</section>');
-    for (let i = 0; i < rest.length; i += 2) {
-      const pair = rest.slice(i, i + 2);
-      if (pair.length === 2) {
-        const cells = pair.map((u) => '<section style="flex:1 1 0;min-width:0;">' + imgTag(u, '100%') + '</section>').join('');
-        parts.push('<section style="display:flex;gap:8px;align-items:flex-start;margin:12px 0;">' + cells + '</section>');
-      } else {
-        parts.push('<section style="margin:12px 0;text-align:center;">' + imgTag(pair[0], '92%') + '</section>');
+    for (const item of wide) parts.push(onePhoto(item, '100%'));
+    const allPortraitish = rest.length && rest.every((item) => {
+      const m = imgMeta[item.url] || { w: 0, h: 0 };
+      return m.w && m.h ? m.w / m.h < 1.15 : true;
+    });
+    if (rest.length === 3 && allPortraitish) {
+      parts.push(photoRowHtml(rest, 6));
+    } else {
+      for (let i = 0; i < rest.length; i += 2) {
+        const pair = rest.slice(i, i + 2);
+        if (pair.length === 2) parts.push(photoRowHtml(pair));
+        else parts.push(onePhoto(pair[0], '92%'));
       }
     }
     return parts.join('');
@@ -241,18 +290,43 @@ const FILL_BODY = String.raw`
     const el = anyTextSlot.el;
     return el.tagName === 'P' ? el : (el.closest('p') || el);
   };
-  const createParagraphsAfter = (anchorEl, texts) => {
+  /** 列表项/小标题的段落样式（通知类文章大量用：一、二、三 小节 + 1./2./3. 条目）。 */
+  const stylePlain = (el, { bold = false } = {}) => {
+    if (!el) return;
+    const color = forcedColor || textColor(el);
+    for (const target of [el, ...el.querySelectorAll('p,span,strong')]) {
+      target.style.fontSize = '14px';
+      target.style.lineHeight = '1.75';
+      target.style.letterSpacing = '2px';
+      target.style.color = color;
+      target.style.textIndent = '0';
+      target.style.textAlign = 'left';
+      target.style.margin = '0 0 2px';
+      if (bold) target.style.fontWeight = '600';
+      else if (target.style.fontWeight === '600') target.style.fontWeight = '400';
+    }
+  };
+  /** 自动编号：原文已经带 "1." / "（1）" / "•" 的就不重复加。 */
+  const numberItem = (text, index) => {
+    const raw = String(text == null ? '' : text).trim();
+    if (/^(\d+[.、)）]|（\d+）|[一二三四五六七八九十]+[、.]|[-•·])/.test(raw)) return raw;
+    return (index + 1) + '. ' + raw;
+  };
+  const createParagraphsAfter = (anchorEl, texts, style = 'para') => {
     const proto = protoParagraph();
     if (!proto || !anchorEl) return [];
     const made = [];
     let cursor = anchorEl;
-    for (const text of texts) {
+    for (let i = 0; i < texts.length; i += 1) {
+      const text = texts[i];
       const clone = proto.cloneNode(true);
       clone.querySelectorAll('[data-wx135-slot]').forEach((e) => e.removeAttribute('data-wx135-slot'));
       const holder = [...clone.querySelectorAll('p,span,strong')].find((h) => (h.textContent || '').trim()) || clone;
       holder.textContent = text;
-      styleParagraph(holder);
-      styleParagraph(clone);
+      if (style === 'list') stylePlain(holder);
+      else if (style === 'subhead') stylePlain(holder, { bold: true });
+      else { styleParagraph(holder); styleParagraph(clone); }
+      if (style !== 'para') stylePlain(clone, { bold: style === 'subhead' });
       cursor.parentNode.insertBefore(clone, cursor.nextSibling);
       cursor = clone;
       made.push(clone);
@@ -265,42 +339,75 @@ const FILL_BODY = String.raw`
     const range = ranges[i];
     const sec = planSections[i];
     const slotInfo = sectionSlots[i] || { heading: [], text: [] };
+    forcedColor = (sec && sec.textColor) || plan.textColor || null;
     if (!sec) continue;
-    // 标题：同一块里模板可能把文字拆成多个槽位，只填第一个，其余清空（避免重复显示）
-    slotInfo.heading.forEach((slot, k) => setText(slot, k === 0 ? sec.heading || '' : ''));
+    // 标题：模板可能把"编号 + 标题"拆成两个槽位（PART.01 / 启动仪式），也可能只是重复文本
+    slotInfo.heading.forEach((slot, k) => {
+      if (k === 0) setText(slot, sec.heading || '');
+      else if (k === 1) {
+        setText(slot, sec.label || '');
+        if (sec.label && slot.el) {
+          // 编号/栏目名比标题小一号，避免和主标题抢视觉
+          slot.el.style.fontSize = '60%';
+          slot.el.style.fontWeight = '400';
+          slot.el.style.letterSpacing = '2px';
+          slot.el.style.opacity = '0.82';
+        }
+      } else setText(slot, '');
+    });
+    let cursor = slotInfo.heading[0] ? slotInfo.heading[0].el : (blocks[range.start] || null);
     // 段落
     const paras = sec.paragraphs || [];
     if (slotInfo.text.length) {
       slotInfo.text.forEach((slot, k) => {
-        if (k < paras.length) { setText(slot, paras[k]); styleParagraph(slot.el); }
+        if (k < paras.length) { setText(slot, paras[k]); styleParagraph(slot.el); cursor = slot.el; }
         else setText(slot, '');
       });
       if (paras.length > slotInfo.text.length) {
-        createParagraphsAfter(slotInfo.text[slotInfo.text.length - 1].el, paras.slice(slotInfo.text.length));
+        const made = createParagraphsAfter(slotInfo.text[slotInfo.text.length - 1].el, paras.slice(slotInfo.text.length));
+        if (made.length) cursor = made[made.length - 1];
       }
     } else if (paras.length) {
       // 这一块模板里没有正文槽位：在标题块后面新建段落
-      const anchor = slotInfo.heading[0] ? slotInfo.heading[0].el : blocks[range.start];
-      createParagraphsAfter(anchor, paras);
+      const made = createParagraphsAfter(cursor, paras);
+      if (made.length) cursor = made[made.length - 1];
     }
-    // 图片：本节范围内的锚点优先
-    const urls = (sec.images || []).map(urlOf).filter(Boolean);
-    if (urls.length) {
+    // 条目（通知/须知类文章大量用：1. 2. 3.）
+    if (Array.isArray(sec.items) && sec.items.length && cursor) {
+      const made = createParagraphsAfter(cursor, sec.items.map(numberItem), 'list');
+      if (made.length) cursor = made[made.length - 1];
+    }
+    // 子小节（"离校前 / 行前准备 / 途中守则" 这种）：小标题加粗 + 下面跟条目
+    for (const sub of sec.subsections || []) {
+      if (!sub || !cursor) continue;
+      if (sub.heading) {
+        const made = createParagraphsAfter(cursor, [sub.heading], 'subhead');
+        if (made.length) cursor = made[made.length - 1];
+      }
+      if (Array.isArray(sub.items) && sub.items.length) {
+        const made = createParagraphsAfter(cursor, sub.items.map(numberItem), 'list');
+        if (made.length) cursor = made[made.length - 1];
+      }
+    }
+    // 图片：本节范围内的锚点优先；图片可带图注 caption
+    const imgItems = (sec.images || [])
+      .map((x) => (typeof x === 'string' ? { url: x } : { url: x && x.url, caption: x && x.caption }))
+      .filter((x) => x.url);
+    if (imgItems.length) {
       const anchors = [...root.querySelectorAll('[data-wx135-photo]')].filter((a) => {
         const b = blockIndexOf(a, getBlocks());
         return b >= range.start && b <= range.end;
       });
       if (anchors.length) {
-        anchors[0].insertAdjacentHTML('afterend', buildPhotoHtml(urls));
+        anchors[0].insertAdjacentHTML('afterend', buildPhotoHtml(imgItems));
         anchors.forEach((a) => a.remove());
         stats.anchorsUsed += 1;
+      } else if (cursor) {
+        cursor.insertAdjacentHTML('afterend', buildPhotoHtml(imgItems));
       } else {
-        const lastText = slotInfo.text[slotInfo.text.length - 1];
-        const anchorEl = lastText ? lastText.el : (slotInfo.heading[0] && slotInfo.heading[0].el);
-        if (anchorEl) anchorEl.insertAdjacentHTML('afterend', buildPhotoHtml(urls));
-        else blocks[range.start].insertAdjacentHTML('afterend', buildPhotoHtml(urls));
+        blocks[range.start].insertAdjacentHTML('afterend', buildPhotoHtml(imgItems));
       }
-      stats.imagesPlaced += urls.length;
+      stats.imagesPlaced += imgItems.length;
     }
   }
 
