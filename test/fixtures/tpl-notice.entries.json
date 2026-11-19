@@ -1,0 +1,41 @@
+{
+  "_comment": "离线回归 fixture：模仿「秋季开学通知」这类模板的形状（字号/字重/底色/块结构），文字是占位示例，不含模板原文。blockIndex 对应顶层块序号。",
+  "entries": [
+    { "id": 0, "text": "示例标题甲", "tag": "strong", "fontSize": 32, "fontWeight": 700, "color": "rgb(51,51,51)", "textAlign": "center", "hasBgHighlight": false, "blockIndex": 0, "orderInBlock": 1 },
+    { "id": 1, "text": "示例标题乙", "tag": "strong", "fontSize": 32, "fontWeight": 700, "color": "rgb(228,157,8)", "textAlign": "center", "hasBgHighlight": false, "blockIndex": 0, "orderInBlock": 2 },
+    { "id": 2, "text": "SAMPLE BACK", "tag": "span", "fontSize": 14, "fontWeight": 400, "color": "rgb(255,255,255)", "textAlign": "right", "hasBgHighlight": true, "blockIndex": 0, "orderInBlock": 3 },
+    { "id": 3, "text": "示例栏目名称", "tag": "span", "fontSize": 14, "fontWeight": 400, "color": "rgb(93,57,29)", "textAlign": "center", "hasBgHighlight": false, "blockIndex": 0, "orderInBlock": 4 },
+
+    { "id": 4, "text": "这是一段导语示例，用来模拟模板正文的排版样式和大致长度，它应该被判成正文。", "tag": "p", "fontSize": 14, "fontWeight": 400, "color": "rgb(51,51,51)", "textAlign": "justify", "hasBgHighlight": false, "blockIndex": 1, "orderInBlock": 1 },
+
+    { "id": 5, "text": "壹", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(255,255,255)", "textAlign": "center", "hasBgHighlight": true, "blockIndex": 3, "orderInBlock": 1 },
+    { "id": 6, "text": "分节标题甲", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(62,75,40)", "textAlign": "left", "hasBgHighlight": false, "blockIndex": 3, "orderInBlock": 2 },
+    { "id": 7, "text": "SAMPLE SEASON——", "tag": "span", "fontSize": 12, "fontWeight": 400, "color": "rgb(110,170,4)", "textAlign": "right", "hasBgHighlight": false, "blockIndex": 3, "orderInBlock": 3 },
+    { "id": 8, "text": "示例装饰标语", "tag": "span", "fontSize": 14, "fontWeight": 400, "color": "rgb(62,75,40)", "textAlign": "center", "hasBgHighlight": true, "blockIndex": 3, "orderInBlock": 4 },
+
+    { "id": 9, "text": "示例条目甲", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(94,164,0)", "textAlign": "left", "hasBgHighlight": false, "blockIndex": 5, "orderInBlock": 1 },
+    { "id": 10, "text": "条目正文示例，用来验证卡内小标题后面的正文仍然是正文。", "tag": "p", "fontSize": 14, "fontWeight": 400, "color": "rgb(51,51,51)", "textAlign": "justify", "hasBgHighlight": false, "blockIndex": 5, "orderInBlock": 2 },
+    { "id": 11, "text": "示例条目乙", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(94,164,0)", "textAlign": "left", "hasBgHighlight": false, "blockIndex": 5, "orderInBlock": 3 },
+    { "id": 12, "text": "示例条目丙", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(94,164,0)", "textAlign": "left", "hasBgHighlight": false, "blockIndex": 5, "orderInBlock": 4 },
+
+    { "id": 13, "text": "贰", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(255,255,255)", "textAlign": "center", "hasBgHighlight": true, "blockIndex": 7, "orderInBlock": 1 },
+    { "id": 14, "text": "分节标题乙", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(62,75,40)", "textAlign": "left", "hasBgHighlight": false, "blockIndex": 7, "orderInBlock": 2 },
+    { "id": 15, "text": "SAMPLE SEASON——", "tag": "span", "fontSize": 12, "fontWeight": 400, "color": "rgb(110,170,4)", "textAlign": "right", "hasBgHighlight": false, "blockIndex": 7, "orderInBlock": 3 },
+    { "id": 16, "text": "示例装饰标语", "tag": "span", "fontSize": 14, "fontWeight": 400, "color": "rgb(62,75,40)", "textAlign": "center", "hasBgHighlight": true, "blockIndex": 7, "orderInBlock": 4 },
+
+    { "id": 17, "text": "示例子标题", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(62,104,68)", "textAlign": "center", "hasBgHighlight": false, "blockIndex": 9, "orderInBlock": 1 },
+    { "id": 18, "text": "示例条目丁", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(93,163,0)", "textAlign": "left", "hasBgHighlight": false, "blockIndex": 9, "orderInBlock": 2 },
+    { "id": 19, "text": "示例条目戊", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(93,163,0)", "textAlign": "left", "hasBgHighlight": false, "blockIndex": 9, "orderInBlock": 3 },
+    { "id": 20, "text": "示例条目己", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(93,163,0)", "textAlign": "left", "hasBgHighlight": false, "blockIndex": 9, "orderInBlock": 4 },
+    { "id": 21, "text": "示例条目庚", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(93,163,0)", "textAlign": "left", "hasBgHighlight": false, "blockIndex": 9, "orderInBlock": 5 },
+
+    { "id": 22, "text": "叁", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(255,255,255)", "textAlign": "center", "hasBgHighlight": true, "blockIndex": 11, "orderInBlock": 1 },
+    { "id": 23, "text": "分节标题丙", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(62,75,40)", "textAlign": "left", "hasBgHighlight": false, "blockIndex": 11, "orderInBlock": 2 },
+    { "id": 24, "text": "SAMPLE SEASON——", "tag": "span", "fontSize": 12, "fontWeight": 400, "color": "rgb(110,170,4)", "textAlign": "right", "hasBgHighlight": false, "blockIndex": 11, "orderInBlock": 3 },
+    { "id": 25, "text": "示例装饰标语", "tag": "span", "fontSize": 14, "fontWeight": 400, "color": "rgb(62,75,40)", "textAlign": "center", "hasBgHighlight": true, "blockIndex": 11, "orderInBlock": 4 },
+
+    { "id": 26, "text": "示例条目辛", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(116,180,2)", "textAlign": "center", "hasBgHighlight": true, "blockIndex": 13, "orderInBlock": 1 },
+    { "id": 27, "text": "示例条目壬", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(116,180,2)", "textAlign": "center", "hasBgHighlight": true, "blockIndex": 13, "orderInBlock": 2 },
+    { "id": 28, "text": "示例条目癸", "tag": "strong", "fontSize": 16, "fontWeight": 700, "color": "rgb(116,180,2)", "textAlign": "center", "hasBgHighlight": true, "blockIndex": 13, "orderInBlock": 3 }
+  ]
+}

@@ -403,8 +403,10 @@ export function createTools(defineTool) {
       description:
         '135 模板解析与清空。action=analyze：返回模板解剖报告（块结构、文字字号/颜色画像、图片清单'
         + '与「装饰 vs 实拍」初判），报告落盘供后续使用；action=clean：把当前模板复制到沙箱页，'
-        + '清掉实拍图（默认换成不可见锚点，compose 时填新图）和文字（换成【大标题】/【小标题】/【正文】槽位），'
-        + '**不写回编辑器**，返回清空后的 frames HTML、槽位统计与截图。photoIndices 不传时自动按初判删除。',
+        + '清掉实拍图（默认换成不可见锚点，compose 时填新图）和文字（换成【大标题】/【小标题】/【编号】/【正文】槽位），'
+        + '**不写回编辑器**，返回清空后的 frame HTML、槽位统计（含角色语义）、slots.json 与截图。'
+        + 'photoIndices 不传时自动按初判删除。文字槽位按 roles.js 判成 '
+        + 'title/subtitle/subhead/label/decor/text；模板自带的装饰标语（decor）默认置空、不参与内容填充。',
       parameters: {
         action: { type: 'string', description: 'analyze | clean，默认 analyze。' },
         tab: { type: 'string', description: '编辑器标签页子串；不传用第一个。' },
@@ -416,6 +418,7 @@ export function createTools(defineTool) {
         slotPlaceholders: { type: 'boolean', description: 'action=clean 时文字是否换成【大标题】/【正文】占位，默认 true。' },
         photoMode: { type: 'string', description: 'action=clean 时照片处理：anchor=不可见锚点（工作流默认，compose 填图）/ placeholder=灰色占位块（演示用）。' },
         trimFooter: { type: 'boolean', description: 'action=clean 时是否删掉模板自带的尾部（END/网络编辑/数小理…），工作流默认 true。' },
+        decorPolicy: { type: 'string', description: 'action=clean 时装饰文字（模板自带标语，如每节重复出现的那句）怎么处理：empty=置空保留样式空壳（默认）/ keep=保留原文 / remove=整段删掉。' },
       },
       output: {
         schema: {
@@ -456,12 +459,16 @@ export function createTools(defineTool) {
             }
             const photos = report.images.filter((im) => im.kind === 'photo' || im.photoScore >= 3);
             const titleLeaves = (report.leaves || []).filter((l) => (l.fontSize || 0) >= 20).length;
+            const rs = report.roleStats || { title: 0, subtitle: 0, subhead: 0, label: 0, decor: 0, text: 0 };
             const lines = [
               `模板：tplid=${st.tplid || '(未知)'} / ${st.htmlLen} 字符 / ${st.imgCount} 图 / ${st.blockCount} 个顶层块`,
               `section ${st.sections[0]}-${st.sections[1]}${st.balanced ? '（平衡）' : '（不平衡！）'} / SVG ${st.svgCount} 个 / 绝对定位布局 ${st.absoluteLayouts} 个`,
               `文字叶子 ${st.leafCount} 个，字号画像：`,
               ...report.profile.slice(0, 6).map((p) => `  - ${p.count} 处 ${p.key.replaceAll('|', ' / ')} 例：${p.sample}`),
               `标题可编辑性：${titleLeaves} 个 ≥20px 文字叶${titleLeaves ? '（有文字大标题，换标题没问题）' : '（⚠️ 大标题可能是图片/图形，换标题需要换图，建议换一个标题可编辑的模板）'}`,
+              `槽位角色预测（rules v${report.roleRulesVersion ?? '?'}）：大标题 ${rs.title} / 分节标题 ${rs.subtitle} / 小标题 ${rs.subhead} / 编号 ${rs.label} / 装饰 ${rs.decor} / 正文 ${rs.text}`,
+              rs.decor ? `  ⚠️ 其中 ${rs.decor} 处是装饰标语（模板自带、多节重复），clean 默认置空、不参与内容填充` : '',
+              rs.subtitle ? `  分节标题可识别：compose 能自动按 ${rs.subtitle} 个分节锚点套版` : '  ⚠️ 没识别出分节标题：compose 的分节机制可能失效，建议看 slots.json 手工核对',
               `图片初判：自动实拍候选 ${photos.length} 张 / 装饰 ${report.images.filter((i) => i.kind.startsWith('decor')).length} 张`,
               `图片总览（带 #序号，先看它再决定删哪些）：${atlas?.path || atlas?.error || '(生成失败)'}`,
               `完整报告：${reportPath}`,
@@ -474,6 +481,9 @@ export function createTools(defineTool) {
               stats: st,
               profile: report.profile,
               titleLeaves,
+              roleStats: rs,
+              roleRulesVersion: report.roleRulesVersion ?? null,
+              predictedSlots: report.predictedSlots || [],
               photoCandidates: photos.map((p) => p.index),
             });
           }
@@ -500,18 +510,30 @@ export function createTools(defineTool) {
               slotPlaceholders: args.slotPlaceholders !== false,
               photoMode: args.photoMode || 'anchor',
               trimFooter: args.trimFooter !== false,
+              decorPolicy: args.decorPolicy || 'empty',
             });
             if (!cleaned?.ok) throw new Error(cleaned?.error || '清空失败');
             const dir = ensureDir(join(outDir(), `clean-${stamp()}`));
             const htmlPath = join(dir, 'frame.html');
             writeFileSync(htmlPath, cleaned.html, 'utf8');
+            // 槽位清单：agent 不用再比对原始 HTML 就能知道每个槽位是什么角色
+            const slotsPath = join(dir, 'slots.json');
+            writeFileSync(slotsPath, JSON.stringify({
+              roleRulesVersion: cleaned.roleRulesVersion,
+              decorPolicy: cleaned.decorPolicy,
+              stats: cleaned.stats.roleStats,
+              slots: cleaned.slotManifest,
+              photoAnchors: cleaned.photoAnchors,
+            }, null, 2), 'utf8');
             // 重新按清空后的内容渲染，截分屏图
             await loadSandboxHtml(sandboxConn, cleaned.html);
             const shots = await capturePageSlices(sandboxConn, { outDir: dir, maxSlices: 10, prefix: 'frame' });
             const lines = [
               `清空完成（未写回编辑器）：${target.title || '(无标题)'}`,
               `删除实拍图 ${cleaned.stats.removedPhotos} 张（${(args.photoMode || 'anchor') === 'anchor' ? '换成不可见锚点' : '换成占位块'}）；文字槽 ${cleaned.stats.textCleared} 处；剩余 ${cleaned.stats.imgs} 图`,
-              `槽位：大标题 ${cleaned.stats.titleSlots} / 小标题 ${cleaned.stats.subtitleSlots} / 正文 ${cleaned.stats.textSlots} / 照片锚点 ${cleaned.stats.photoAnchors}`,
+              `槽位：大标题 ${cleaned.stats.titleSlots} / 分节标题 ${cleaned.stats.subtitleSlots} / 小标题 ${cleaned.stats.subheadSlots} / 编号 ${cleaned.stats.labelSlots} / 装饰 ${cleaned.stats.decorSlots} / 正文 ${cleaned.stats.textSlots} / 照片锚点 ${cleaned.stats.photoAnchors}`,
+              `装饰文字处置（decorPolicy=${cleaned.decorPolicy}）：置空 ${cleaned.stats.decorEmptied} / 保留 ${cleaned.stats.decorKept} / 删除 ${cleaned.stats.decorRemoved}（装饰不参与内容填充）`,
+              `槽位清单（每个槽位的角色/字号/原位文字）：${slotsPath}`,
               `section ${cleaned.stats.sections[0]}-${cleaned.stats.sections[1]}${cleaned.stats.balanced ? '（平衡）' : '（不平衡！）'}`,
               `框架 HTML：${htmlPath}`,
               `截图：`,
@@ -520,7 +542,8 @@ export function createTools(defineTool) {
               '下一步：wx135_compose（frame=这个 frame.html + plan.json）合成整篇。',
             ];
             return result(lines.join('\n'), {
-              tab: target.url, htmlPath, shots: shots.files, stats: cleaned.stats, photoIndices,
+              tab: target.url, htmlPath, slotsPath, shots: shots.files, stats: cleaned.stats,
+              photoIndices, roleRulesVersion: cleaned.roleRulesVersion, decorPolicy: cleaned.decorPolicy,
             });
           } finally {
             sandboxConn.close();

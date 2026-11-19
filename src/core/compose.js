@@ -145,6 +145,7 @@ const FILL_BODY = String.raw`
   const leadSlots = slots.filter((s) => s.role === 'text' && inRange(s.block, headerRegion));
   const sectionSlots = ranges.map((r) => ({
     heading: slots.filter((s) => s.role === 'subtitle' && inRange(s.block, r)),
+    label: slots.filter((s) => s.role === 'label' && inRange(s.block, r)),
     text: slots.filter((s) => s.role === 'text' && inRange(s.block, r)),
   }));
 
@@ -384,6 +385,18 @@ const FILL_BODY = String.raw`
         }
       } else setText(slot, '');
     });
+    // 编号/英文副标（role=label）：plan 给了 label 就填，没给就清空，避免残留【编号】或模板自带的英文标语
+    const labelSlots = sec && Array.isArray(slotInfo.label) ? slotInfo.label : [];
+    labelSlots.forEach((slot, k) => {
+      const val = k === 0 && sec && sec.label ? sec.label : '';
+      setText(slot, val);
+      if (val && slot.el) {
+        slot.el.style.fontSize = '60%';
+        slot.el.style.fontWeight = '400';
+        slot.el.style.letterSpacing = '2px';
+        slot.el.style.opacity = '0.82';
+      }
+    });
     let cursor = slotInfo.heading[0] ? slotInfo.heading[0].el : (blocks[range.start] || null);
     // 段落
     const paras = sec.paragraphs || [];
@@ -458,6 +471,15 @@ const FILL_BODY = String.raw`
     : '';
   const footer = String(footerHtml || '').replace(/\{\{NETWORK_EDITORS\}\}/g, esc(plan.networkEditors || ''));
   root.insertAdjacentHTML('beforeend', creditsHtml + footer);
+
+  // 9.5) 收尾：清掉没被填的槽位占位符（subhead/decor/label 等），移除内部 data 属性与多余照片锚点
+  for (const el of [...root.querySelectorAll('[data-wx135-slot]')]) {
+    const txt = (el.textContent || '').trim();
+    if (!txt || /^【[^】]{1,6}】$/.test(txt)) el.textContent = '';
+    el.removeAttribute('data-wx135-slot');
+  }
+  for (const el of [...root.querySelectorAll('[data-wx135-photo]')]) el.remove();
+  for (const el of [...root.querySelectorAll('[data-wx135-e]')]) el.removeAttribute('data-wx135-e');
 
   // 10) 统计
   const out = root.outerHTML;

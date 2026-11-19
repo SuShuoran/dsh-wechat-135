@@ -25,7 +25,7 @@ const importFrom = (rel) => import(pathToFileURL(join(root, rel)).href);
 
 // 1) 所有模块能 import
 const coreModules = [
-  'cdp', 'browser', 'paths', 'editor', 'capture', 'template',
+  'cdp', 'browser', 'paths', 'editor', 'capture', 'template', 'roles',
   'sandbox', 'atlas', 'compose', 'footer', 'upload', 'finish', 'imagesize',
 ];
 for (const name of coreModules) {

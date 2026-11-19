@@ -15,6 +15,13 @@
  * 135 素材库里大量"装饰图"和实拍照片长得一样，纯靠 URL 猜会误删。
  */
 import { evaluateJson } from './cdp.js';
+import {
+  COLLECT_ENTRIES_EXPR,
+  DECOR_POLICIES,
+  ROLE_RULES_VERSION,
+  SLOT_PLACEHOLDERS,
+  classifierPrelude,
+} from './roles.js';
 
 /**
  * 编辑器正文根元素的表达式（不依赖别的片段，单独塞进页面就能跑）。
@@ -47,7 +54,7 @@ export const SANDBOX_ARTICLE_ROOT = `(() => {
 
 /** 解析：`root` 是要分析的根元素表达式。 */
 export async function analyzeTemplate(conn, { root = 'document.body' } = {}) {
-  const body = String.raw`
+  const baseBody = String.raw`
   const root = __ROOT__;
   if (!root) return JSON.stringify({ ok: false, error: 'root not found' });
   const html = root.innerHTML || '';
@@ -141,10 +148,31 @@ export async function analyzeTemplate(conn, { root = 'document.body' } = {}) {
   }
   const profile = [...groups.values()].sort((a, b) => b.count - a.count).slice(0, 12);
 
+  // 3) 槽位角色预测（和 clean 用同一套判定，让 agent 动手前就知道模板会被拆成什么）
+  const __slotRoot = root;
+  const collected = JSON.parse((__COLLECT__));
+  const predEntries = (collected && collected.entries) || [];
+  __PRELUDE__
+  const predClassified = applyStructuralRoles(predEntries, classifyEntries(predEntries));
+  const roleStats = { title: 0, subtitle: 0, subhead: 0, label: 0, decor: 0, text: 0 };
+  for (const c of predClassified) if (roleStats[c.role] != null) roleStats[c.role] += 1;
+  const predictedSlots = predEntries.map((e, i) => ({
+    id: e.id,
+    role: predClassified[i].role,
+    reason: predClassified[i].reason,
+    text: (e.text || '').slice(0, 40),
+    fontSize: e.fontSize,
+    fontWeight: e.fontWeight,
+    textAlign: e.textAlign,
+    hasBgHighlight: e.hasBgHighlight,
+    blockIndex: e.blockIndex,
+  }));
+
   const open = (html.match(/<section\b/gi) || []).length;
   const close = (html.match(/<\/section>/gi) || []).length;
   return JSON.stringify({
     ok: true,
+    roleRulesVersion: __RULES_VERSION__,
     stats: {
       htmlLen: html.length,
       textLen: (root.innerText || '').length,
@@ -157,17 +185,28 @@ export async function analyzeTemplate(conn, { root = 'document.body' } = {}) {
       absoluteLayouts: root.querySelectorAll('[data-role="absolute-layout"]').length,
       tplid: root.getAttribute('data-tplid') || '',
     },
+    roleStats,
+    predictedSlots,
     images,
     blocks,
     profile,
     leaves: leaves.slice(0, 120),
   });`;
+  const collectExpr = COLLECT_ENTRIES_EXPR
+    .replace('__ROOT__', () => '__slotRoot')
+    .replace('__MARK__', () => 'false');
+  const body = baseBody
+    .replace('__COLLECT__', () => collectExpr)
+    .replace('__PRELUDE__', () => classifierPrelude())
+    .replace('__RULES_VERSION__', () => String(ROLE_RULES_VERSION));
   return evaluateJson(conn, `(() => {\n${body.replace('__ROOT__', () => root)}\n})()`);
 }
 
 /**
- * 清空：实拍图换占位块、文字清空（或换成槽位占位符），保留装饰与结构。
- * 返回 { ok, html, stats }，**不写回编辑器**。
+ * 清空：实拍图换占位块、文字按角色换槽位占位符，保留装饰与结构。
+ * decorPolicy：装饰文字（模板自带标语，如每节重复出现的那句）的处置
+ *   empty（默认）=置空保留样式空壳；keep=保留原文；remove=整段删掉。
+ * 返回 { ok, html, stats, slots, slotManifest }，**不写回编辑器**。
  */
 export async function cleanTemplate(conn, {
   root = 'document.body',
@@ -177,9 +216,12 @@ export async function cleanTemplate(conn, {
   photoLabel = '【活动照片】',
   photoMode = 'anchor',
   trimFooter = false,
+  decorPolicy = 'empty',
 } = {}) {
-  const opts = JSON.stringify({ photoIndices, clearText, slotPlaceholders, photoLabel, photoMode, trimFooter });
-  const body = String.raw`
+  if (!DECOR_POLICIES.includes(decorPolicy)) decorPolicy = 'empty';
+  const opts = JSON.stringify({ photoIndices, clearText, slotPlaceholders, photoLabel, photoMode, trimFooter, decorPolicy });
+  const baseBody = String.raw`
+  __PRELUDE__
   const root = __ROOT__;
   if (!root) return JSON.stringify({ ok: false, error: 'root not found' });
   const opts = __OPTS__;
@@ -233,37 +275,54 @@ export async function cleanTemplate(conn, {
     }
   }
 
-  // 2) 文字：清空 or 换槽位占位符
+  // 2) 文字：按「角色语义」清空 / 换槽位占位符
+  //    角色判定见 src/core/roles.js：
+  //      title=大标题 subtitle=分节标题 subhead=块内小标题 label=编号/英文副标
+  //      decor=装饰标语（默认置空，不参与内容填充） text=正文
   let textCleared = 0;
+  let decorEmptied = 0;
+  let decorKept = 0;
+  let decorRemoved = 0;
+  let classified = [];
+  let slotEntries = [];
   if (opts.clearText) {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    const seen = new Set();
-    let node;
-    while ((node = walker.nextNode())) {
-      const t = (node.textContent || '').trim();
-      if (!t) continue;
-      const el = node.parentElement;
+    const __slotRoot = root;
+    const collected = JSON.parse((__COLLECT__));
+    const entries = (collected && collected.entries) || [];
+    slotEntries = entries;
+    classified = applyStructuralRoles(entries, classifyEntries(entries));
+    const placeholders = __PLACEHOLDERS__;
+    const policy = __DECOR_POLICY__;
+    for (let i = 0; i < entries.length; i += 1) {
+      const e = entries[i];
+      const c = classified[i];
+      const el = root.querySelector('[data-wx135-e="' + e.id + '"]');
       if (!el) continue;
-      // 图片占位块里的「【活动照片】」不是模板文字，别被文字清理顺手改成【正文】
-      if (el.closest && el.closest('[data-wx135-slot="photo"]')) continue;
-      const tag = (el.tagName || '').toLowerCase();
-      if (tag === 'style' || tag === 'script') continue;
-      if (seen.has(el)) {
-        node.textContent = '';
+      if (c.role === 'decor') {
+        if (policy === 'remove') {
+          if (el.parentNode) el.parentNode.removeChild(el);
+          decorRemoved += 1;
+        } else if (policy === 'keep') {
+          decorKept += 1;
+        } else {
+          el.textContent = '';
+          el.setAttribute('data-wx135-slot', 'decor');
+          decorEmptied += 1;
+        }
+        textCleared += 1;
         continue;
       }
-      seen.add(el);
-      const cs = getComputedStyle(el);
-      const fs = parseFloat(cs.fontSize) || 14;
       if (opts.slotPlaceholders) {
-        const label = fs >= 22 ? '【大标题】' : fs >= 17 ? '【小标题】' : '【正文】';
-        node.textContent = label;
-        el.setAttribute('data-wx135-slot', fs >= 22 ? 'title' : fs >= 17 ? 'subtitle' : 'text');
+        el.textContent = placeholders[c.role] == null ? placeholders.text : placeholders[c.role];
+        el.setAttribute('data-wx135-slot', c.role);
       } else {
-        node.textContent = '';
+        el.textContent = '';
+        el.removeAttribute('data-wx135-slot');
       }
       textCleared += 1;
     }
+    // 清掉采集用的临时标记（不能留在产物 HTML 里）
+    root.querySelectorAll('[data-wx135-e]').forEach((el) => el.removeAttribute('data-wx135-e'));
   }
 
   const out = root.outerHTML;
@@ -278,13 +337,34 @@ export async function cleanTemplate(conn, {
     w: Number(el.getAttribute('data-wx-w') || 0),
     h: Number(el.getAttribute('data-wx-h') || 0),
   }));
+  const roleStats = { title: 0, subtitle: 0, subhead: 0, label: 0, decor: 0, text: 0 };
+  const slotManifest = classified.map((c, i) => {
+    const e = slotEntries[i] || {};
+    return {
+      index: i,
+      role: c.role,
+      reason: c.reason,
+      originalText: String(e.text || '').slice(0, 80),
+      fontSize: e.fontSize,
+      fontWeight: e.fontWeight,
+      textAlign: e.textAlign,
+      hasBgHighlight: !!e.hasBgHighlight,
+      blockIndex: e.blockIndex,
+    };
+  });
+  for (const s of slotManifest) if (roleStats[s.role] != null) roleStats[s.role] += 1;
   return JSON.stringify({
     ok: true,
+    roleRulesVersion: __RULES_VERSION__,
+    decorPolicy: opts.decorPolicy,
     html: out,
     stats: {
       removedPhotos,
       textCleared,
       trimmedTail,
+      decorEmptied,
+      decorKept,
+      decorRemoved,
       htmlLen: out.length,
       textLen: (root.innerText || '').trim().length,
       imgs: root.querySelectorAll('img').length,
@@ -292,13 +372,27 @@ export async function cleanTemplate(conn, {
       balanced: open === close,
       slots: slots.length,
       photoAnchors: photoAnchors.length,
-      titleSlots: slots.filter((s) => s.role === 'title').length,
-      subtitleSlots: slots.filter((s) => s.role === 'subtitle').length,
-      textSlots: slots.filter((s) => s.role === 'text').length,
+      titleSlots: roleStats.title,
+      subtitleSlots: roleStats.subtitle,
+      subheadSlots: roleStats.subhead,
+      labelSlots: roleStats.label,
+      decorSlots: roleStats.decor,
+      textSlots: roleStats.text,
+      roleStats,
     },
     slots,
+    slotManifest,
     photoAnchors,
   });`;
+  const collectExpr = COLLECT_ENTRIES_EXPR
+    .replace('__ROOT__', () => '__slotRoot')
+    .replace('__MARK__', () => 'true');
+  const body = baseBody
+    .replace('__COLLECT__', () => collectExpr)
+    .replace('__PRELUDE__', () => classifierPrelude())
+    .replace('__PLACEHOLDERS__', () => JSON.stringify(SLOT_PLACEHOLDERS))
+    .replace('__DECOR_POLICY__', () => JSON.stringify(decorPolicy))
+    .replace('__RULES_VERSION__', () => String(ROLE_RULES_VERSION));
   return evaluateJson(conn, `(() => {\n${body.replace('__ROOT__', () => root).replace('__OPTS__', () => opts)}\n})()`);
 }
 
